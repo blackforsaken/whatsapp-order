@@ -13,6 +13,7 @@ export interface PrinterDevice {
 
 class BluetoothPrinterService {
   private connectedDevice: PrinterDevice | null = null;
+  private isInitialized: boolean = false;
 
   /**
    * Initialize Bluetooth and check if it's enabled
@@ -29,9 +30,11 @@ class BluetoothPrinterService {
         }
       }
       
+      this.isInitialized = true;
       return true;
     } catch (error) {
       console.error('Error initializing Bluetooth:', error);
+      this.isInitialized = false;
       return false;
     }
   }
@@ -42,6 +45,11 @@ class BluetoothPrinterService {
   async scanForPrinters(): Promise<PrinterDevice[]> {
     try {
       console.log('Scanning for Bluetooth printers...');
+      
+      // Ensure Bluetooth is initialized
+      if (!this.isInitialized) {
+        await this.initialize();
+      }
       
       // Get paired devices
       const pairedDevices = await BluetoothManager.enableBluetooth();
@@ -66,6 +74,11 @@ class BluetoothPrinterService {
   async connectToPrinter(device: PrinterDevice): Promise<boolean> {
     try {
       console.log('Connecting to printer:', device.name);
+      
+      // Ensure Bluetooth is initialized
+      if (!this.isInitialized) {
+        await this.initialize();
+      }
       
       await BluetoothManager.connect(device.address);
       this.connectedDevice = device;
@@ -92,6 +105,7 @@ class BluetoothPrinterService {
       }
     } catch (error) {
       console.error('Error disconnecting from printer:', error);
+      this.connectedDevice = null;
     }
   }
 
@@ -110,12 +124,44 @@ class BluetoothPrinterService {
   }
 
   /**
+   * Verify actual Bluetooth connection status
+   */
+  async verifyConnection(): Promise<boolean> {
+    try {
+      if (!this.connectedDevice) {
+        return false;
+      }
+
+      // Try to check connection status
+      const isEnabled = await BluetoothManager.isBluetoothEnabled();
+      if (!isEnabled) {
+        console.log('Bluetooth is disabled');
+        this.connectedDevice = null;
+        return false;
+      }
+
+      return true;
+    } catch (error) {
+      console.error('Error verifying connection:', error);
+      this.connectedDevice = null;
+      return false;
+    }
+  }
+
+  /**
    * Print an order receipt
    */
   async printOrder(order: Order): Promise<boolean> {
     try {
       if (!this.connectedDevice) {
         console.error('No printer connected');
+        return false;
+      }
+
+      // Verify connection before printing
+      const isConnected = await this.verifyConnection();
+      if (!isConnected) {
+        console.error('Printer connection lost');
         return false;
       }
 
@@ -303,12 +349,21 @@ class BluetoothPrinterService {
       await BluetoothEscposPrinter.printText('================================\n\n\n', {});
 
       // Cut paper (if supported)
-      await BluetoothEscposPrinter.cutOnePoint();
+      try {
+        await BluetoothEscposPrinter.cutOnePoint();
+      } catch (cutError) {
+        console.log('Paper cut not supported or failed:', cutError);
+        // Continue anyway, this is not critical
+      }
 
       console.log('Order printed successfully');
       return true;
     } catch (error) {
       console.error('Error printing order:', error);
+      
+      // If printing fails, the connection might be lost
+      this.connectedDevice = null;
+      
       return false;
     }
   }
@@ -320,6 +375,13 @@ class BluetoothPrinterService {
     try {
       if (!this.connectedDevice) {
         console.error('No printer connected');
+        return false;
+      }
+
+      // Verify connection before printing
+      const isConnected = await this.verifyConnection();
+      if (!isConnected) {
+        console.error('Printer connection lost');
         return false;
       }
 
@@ -344,12 +406,21 @@ class BluetoothPrinterService {
       );
       await BluetoothEscposPrinter.printText('\n================================\n\n\n', {});
 
-      await BluetoothEscposPrinter.cutOnePoint();
+      try {
+        await BluetoothEscposPrinter.cutOnePoint();
+      } catch (cutError) {
+        console.log('Paper cut not supported or failed:', cutError);
+        // Continue anyway, this is not critical
+      }
 
       console.log('Test receipt printed successfully');
       return true;
     } catch (error) {
       console.error('Error printing test receipt:', error);
+      
+      // If printing fails, the connection might be lost
+      this.connectedDevice = null;
+      
       return false;
     }
   }

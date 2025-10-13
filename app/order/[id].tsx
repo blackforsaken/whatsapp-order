@@ -76,9 +76,11 @@ export default function OrderDetailScreen() {
   };
 
   const handlePrint = async () => {
-    console.log('Printing order:', order.id);
+    console.log('Print button pressed for order:', order.id);
     
+    // Check if printer is connected
     if (!printerService.isConnected()) {
+      console.log('Printer not connected');
       Alert.alert(
         'Impresora no conectada',
         '¿Deseas configurar una impresora ahora?',
@@ -97,18 +99,71 @@ export default function OrderDetailScreen() {
     }
 
     setIsPrinting(true);
+    console.log('Starting print process...');
     
     try {
+      // Verify connection before printing
+      const isConnected = await printerService.verifyConnection();
+      
+      if (!isConnected) {
+        console.log('Printer connection verification failed');
+        Alert.alert(
+          'Conexión perdida',
+          'La conexión con la impresora se ha perdido. Por favor, reconecta la impresora.',
+          [
+            {
+              text: 'OK',
+              onPress: () => router.push('/printer-settings'),
+            },
+          ]
+        );
+        setIsPrinting(false);
+        return;
+      }
+
+      console.log('Connection verified, printing order...');
       const printed = await printerService.printOrder(order);
       
       if (printed) {
+        console.log('Order printed successfully');
         Alert.alert('Éxito', 'Pedido impreso correctamente.');
       } else {
-        Alert.alert('Error', 'No se pudo imprimir el pedido. Verifica la conexión con la impresora.');
+        console.log('Print failed');
+        Alert.alert(
+          'Error de impresión',
+          'No se pudo imprimir el pedido. Verifica que la impresora esté encendida y tenga papel.',
+          [
+            {
+              text: 'Reintentar',
+              onPress: () => handlePrint(),
+            },
+            {
+              text: 'Configurar',
+              onPress: () => router.push('/printer-settings'),
+            },
+            {
+              text: 'Cancelar',
+              style: 'cancel',
+            },
+          ]
+        );
       }
     } catch (error) {
       console.error('Error printing order:', error);
-      Alert.alert('Error', 'Ocurrió un error al imprimir el pedido.');
+      Alert.alert(
+        'Error',
+        `Ocurrió un error al imprimir el pedido: ${error instanceof Error ? error.message : 'Error desconocido'}`,
+        [
+          {
+            text: 'Reintentar',
+            onPress: () => handlePrint(),
+          },
+          {
+            text: 'Cancelar',
+            style: 'cancel',
+          },
+        ]
+      );
     } finally {
       setIsPrinting(false);
     }

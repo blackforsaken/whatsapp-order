@@ -19,50 +19,86 @@ export default function PrinterSettingsScreen() {
   const router = useRouter();
   const [isScanning, setIsScanning] = useState(false);
   const [isConnecting, setIsConnecting] = useState(false);
-  const [isPrinting, setIsPrinting] = useState(false);
+  const [isTesting, setIsTesting] = useState(false);
   const [printers, setPrinters] = useState<PrinterDevice[]>([]);
-  const [connectedDevice, setConnectedDevice] = useState<PrinterDevice | null>(null);
+  const [connectedPrinter, setConnectedPrinter] = useState<PrinterDevice | null>(null);
+  const [isBluetoothEnabled, setIsBluetoothEnabled] = useState(false);
 
   useEffect(() => {
     initializeBluetooth();
-    checkConnection();
   }, []);
 
   const initializeBluetooth = async () => {
-    console.log('Initializing Bluetooth...');
-    const initialized = await printerService.initialize();
-    if (!initialized) {
-      Alert.alert(
-        'Error',
-        'No se pudo inicializar Bluetooth. Por favor, habilita Bluetooth en la configuración de tu dispositivo.'
-      );
+    console.log('Initializing Bluetooth in settings...');
+    try {
+      const initialized = await printerService.initialize();
+      setIsBluetoothEnabled(initialized);
+      
+      if (initialized) {
+        checkConnection();
+      } else {
+        Alert.alert(
+          'Bluetooth desactivado',
+          'Por favor, activa el Bluetooth para usar la impresora.',
+          [
+            {
+              text: 'OK',
+            },
+          ]
+        );
+      }
+    } catch (error) {
+      console.error('Error initializing Bluetooth:', error);
+      Alert.alert('Error', 'No se pudo inicializar el Bluetooth.');
     }
   };
 
-  const checkConnection = () => {
+  const checkConnection = async () => {
+    console.log('Checking printer connection...');
     const device = printerService.getConnectedDevice();
-    setConnectedDevice(device);
+    
+    if (device) {
+      // Verify the connection is still active
+      const isConnected = await printerService.verifyConnection();
+      
+      if (isConnected) {
+        setConnectedPrinter(device);
+        console.log('Printer connected:', device.name);
+      } else {
+        setConnectedPrinter(null);
+        console.log('Printer connection lost');
+      }
+    } else {
+      setConnectedPrinter(null);
+      console.log('No printer connected');
+    }
   };
 
   const handleScanPrinters = async () => {
-    console.log('Starting printer scan...');
+    console.log('Scanning for printers...');
     setIsScanning(true);
     setPrinters([]);
 
     try {
       const foundPrinters = await printerService.scanForPrinters();
       console.log('Found printers:', foundPrinters);
-      setPrinters(foundPrinters);
-
+      
       if (foundPrinters.length === 0) {
         Alert.alert(
           'No se encontraron impresoras',
-          'Asegúrate de que tu impresora Bluetooth esté encendida y emparejada con este dispositivo.'
+          'Asegúrate de que tu impresora Bluetooth esté encendida y emparejada con este dispositivo.',
+          [
+            {
+              text: 'OK',
+            },
+          ]
         );
+      } else {
+        setPrinters(foundPrinters);
       }
     } catch (error) {
-      console.error('Error scanning printers:', error);
-      Alert.alert('Error', 'No se pudo escanear impresoras Bluetooth.');
+      console.error('Error scanning for printers:', error);
+      Alert.alert('Error', 'No se pudo escanear las impresoras.');
     } finally {
       setIsScanning(false);
     }
@@ -76,14 +112,27 @@ export default function PrinterSettingsScreen() {
       const connected = await printerService.connectToPrinter(device);
 
       if (connected) {
-        setConnectedDevice(device);
-        Alert.alert('Conectado', `Conectado a ${device.name} exitosamente.`);
+        setConnectedPrinter(device);
+        Alert.alert('Éxito', `Conectado a ${device.name}`);
       } else {
-        Alert.alert('Error', 'No se pudo conectar a la impresora.');
+        Alert.alert(
+          'Error de conexión',
+          'No se pudo conectar a la impresora. Asegúrate de que esté encendida y dentro del alcance.',
+          [
+            {
+              text: 'Reintentar',
+              onPress: () => handleConnectPrinter(device),
+            },
+            {
+              text: 'Cancelar',
+              style: 'cancel',
+            },
+          ]
+        );
       }
     } catch (error) {
       console.error('Error connecting to printer:', error);
-      Alert.alert('Error', 'No se pudo conectar a la impresora.');
+      Alert.alert('Error', 'Ocurrió un error al conectar con la impresora.');
     } finally {
       setIsConnecting(false);
     }
@@ -91,38 +140,82 @@ export default function PrinterSettingsScreen() {
 
   const handleDisconnect = async () => {
     console.log('Disconnecting from printer...');
-    try {
-      await printerService.disconnect();
-      setConnectedDevice(null);
-      Alert.alert('Desconectado', 'Impresora desconectada exitosamente.');
-    } catch (error) {
-      console.error('Error disconnecting:', error);
-      Alert.alert('Error', 'No se pudo desconectar la impresora.');
-    }
+    
+    Alert.alert(
+      'Desconectar impresora',
+      '¿Estás seguro de que deseas desconectar la impresora?',
+      [
+        {
+          text: 'Cancelar',
+          style: 'cancel',
+        },
+        {
+          text: 'Desconectar',
+          style: 'destructive',
+          onPress: async () => {
+            try {
+              await printerService.disconnect();
+              setConnectedPrinter(null);
+              Alert.alert('Desconectado', 'La impresora ha sido desconectada.');
+            } catch (error) {
+              console.error('Error disconnecting:', error);
+              Alert.alert('Error', 'No se pudo desconectar la impresora.');
+            }
+          },
+        },
+      ]
+    );
   };
 
   const handlePrintTest = async () => {
-    if (!connectedDevice) {
-      Alert.alert('Error', 'No hay impresora conectada.');
+    console.log('Printing test receipt...');
+    
+    if (!connectedPrinter) {
+      Alert.alert('Error', 'No hay ninguna impresora conectada.');
       return;
     }
 
-    console.log('Printing test receipt...');
-    setIsPrinting(true);
+    setIsTesting(true);
 
     try {
-      const printed = await printerService.printTest();
+      // Verify connection before testing
+      const isConnected = await printerService.verifyConnection();
+      
+      if (!isConnected) {
+        Alert.alert(
+          'Conexión perdida',
+          'La conexión con la impresora se ha perdido. Por favor, reconecta la impresora.',
+        );
+        setConnectedPrinter(null);
+        setIsTesting(false);
+        return;
+      }
 
-      if (printed) {
-        Alert.alert('Éxito', 'Recibo de prueba impreso correctamente.');
+      const success = await printerService.printTest();
+
+      if (success) {
+        Alert.alert('Éxito', 'Impresión de prueba completada.');
       } else {
-        Alert.alert('Error', 'No se pudo imprimir el recibo de prueba.');
+        Alert.alert(
+          'Error de impresión',
+          'No se pudo imprimir la prueba. Verifica que la impresora esté encendida y tenga papel.',
+          [
+            {
+              text: 'Reintentar',
+              onPress: () => handlePrintTest(),
+            },
+            {
+              text: 'Cancelar',
+              style: 'cancel',
+            },
+          ]
+        );
       }
     } catch (error) {
       console.error('Error printing test:', error);
-      Alert.alert('Error', 'No se pudo imprimir el recibo de prueba.');
+      Alert.alert('Error', 'Ocurrió un error al imprimir la prueba.');
     } finally {
-      setIsPrinting(false);
+      setIsTesting(false);
     }
   };
 
@@ -130,7 +223,7 @@ export default function PrinterSettingsScreen() {
     <>
       <Stack.Screen
         options={{
-          title: 'Configurar Impresora',
+          title: 'Configuración de Impresora',
           headerBackTitle: 'Atrás',
         }}
       />
@@ -140,194 +233,161 @@ export default function PrinterSettingsScreen() {
           contentContainerStyle={styles.scrollContent}
           showsVerticalScrollIndicator={false}
         >
-          {/* Connection Status */}
+          {/* Bluetooth Status */}
           <View style={styles.section}>
-            <Text style={styles.sectionTitle}>Estado de Conexión</Text>
+            <Text style={styles.sectionTitle}>Estado de Bluetooth</Text>
             <View style={styles.card}>
-              {connectedDevice ? (
-                <>
-                  <View style={styles.statusRow}>
-                    <View style={styles.statusLeft}>
-                      <IconSymbol
-                        name="checkmark.circle.fill"
-                        size={24}
-                        color={colors.success}
-                      />
-                      <View style={styles.statusInfo}>
-                        <Text style={styles.statusLabel}>Conectado</Text>
-                        <Text style={styles.statusValue}>{connectedDevice.name}</Text>
-                      </View>
-                    </View>
-                  </View>
-                  <View style={styles.buttonRow}>
-                    <Pressable
-                      style={({ pressed }) => [
-                        styles.button,
-                        styles.testButton,
-                        pressed && styles.buttonPressed,
-                        isPrinting && styles.buttonDisabled,
-                      ]}
-                      onPress={handlePrintTest}
-                      disabled={isPrinting}
-                    >
-                      {isPrinting ? (
-                        <ActivityIndicator color={colors.card} size="small" />
-                      ) : (
-                        <>
-                          <IconSymbol name="printer.fill" size={20} color={colors.card} />
-                          <Text style={styles.buttonText}>Imprimir Prueba</Text>
-                        </>
-                      )}
-                    </Pressable>
-                    <Pressable
-                      style={({ pressed }) => [
-                        styles.button,
-                        styles.disconnectButton,
-                        pressed && styles.buttonPressed,
-                      ]}
-                      onPress={handleDisconnect}
-                    >
-                      <IconSymbol name="xmark.circle.fill" size={20} color={colors.card} />
-                      <Text style={styles.buttonText}>Desconectar</Text>
-                    </Pressable>
-                  </View>
-                </>
-              ) : (
-                <View style={styles.statusRow}>
-                  <View style={styles.statusLeft}>
-                    <IconSymbol
-                      name="exclamationmark.circle.fill"
-                      size={24}
-                      color={colors.warning}
-                    />
-                    <View style={styles.statusInfo}>
-                      <Text style={styles.statusLabel}>No conectado</Text>
-                      <Text style={styles.statusDescription}>
-                        Escanea y conecta una impresora Bluetooth
-                      </Text>
-                    </View>
-                  </View>
-                </View>
+              <View style={styles.statusRow}>
+                <IconSymbol
+                  name={isBluetoothEnabled ? 'checkmark.circle.fill' : 'xmark.circle.fill'}
+                  size={24}
+                  color={isBluetoothEnabled ? colors.success : colors.danger}
+                />
+                <Text style={styles.statusText}>
+                  {isBluetoothEnabled ? 'Bluetooth activado' : 'Bluetooth desactivado'}
+                </Text>
+              </View>
+              {!isBluetoothEnabled && (
+                <Pressable
+                  style={({ pressed }) => [
+                    styles.button,
+                    { backgroundColor: colors.primary },
+                    pressed && styles.buttonPressed,
+                  ]}
+                  onPress={initializeBluetooth}
+                >
+                  <Text style={styles.buttonText}>Activar Bluetooth</Text>
+                </Pressable>
               )}
             </View>
           </View>
 
-          {/* Scan Button */}
+          {/* Connected Printer */}
+          {connectedPrinter && (
+            <View style={styles.section}>
+              <Text style={styles.sectionTitle}>Impresora Conectada</Text>
+              <View style={styles.card}>
+                <View style={styles.printerInfo}>
+                  <IconSymbol name="printer.fill" size={32} color={colors.success} />
+                  <View style={styles.printerDetails}>
+                    <Text style={styles.printerName}>{connectedPrinter.name}</Text>
+                    <Text style={styles.printerAddress}>{connectedPrinter.address}</Text>
+                  </View>
+                </View>
+                <View style={styles.buttonGroup}>
+                  <Pressable
+                    style={({ pressed }) => [
+                      styles.button,
+                      { backgroundColor: colors.info },
+                      pressed && styles.buttonPressed,
+                      isTesting && styles.buttonDisabled,
+                    ]}
+                    onPress={handlePrintTest}
+                    disabled={isTesting}
+                  >
+                    <IconSymbol name="doc.text.fill" size={20} color={colors.card} />
+                    <Text style={styles.buttonText}>
+                      {isTesting ? 'Imprimiendo...' : 'Imprimir Prueba'}
+                    </Text>
+                  </Pressable>
+                  <Pressable
+                    style={({ pressed }) => [
+                      styles.button,
+                      { backgroundColor: colors.danger },
+                      pressed && styles.buttonPressed,
+                    ]}
+                    onPress={handleDisconnect}
+                  >
+                    <IconSymbol name="xmark.circle.fill" size={20} color={colors.card} />
+                    <Text style={styles.buttonText}>Desconectar</Text>
+                  </Pressable>
+                </View>
+              </View>
+            </View>
+          )}
+
+          {/* Scan for Printers */}
           <View style={styles.section}>
-            <Pressable
-              style={({ pressed }) => [
-                styles.scanButton,
-                pressed && styles.buttonPressed,
-                isScanning && styles.buttonDisabled,
-              ]}
-              onPress={handleScanPrinters}
-              disabled={isScanning}
-            >
-              {isScanning ? (
-                <>
-                  <ActivityIndicator color={colors.card} size="small" />
-                  <Text style={styles.scanButtonText}>Escaneando...</Text>
-                </>
-              ) : (
-                <>
+            <Text style={styles.sectionTitle}>Buscar Impresoras</Text>
+            <View style={styles.card}>
+              <Text style={styles.infoText}>
+                Asegúrate de que tu impresora Bluetooth esté encendida y emparejada con este dispositivo.
+              </Text>
+              <Pressable
+                style={({ pressed }) => [
+                  styles.button,
+                  { backgroundColor: colors.primary },
+                  pressed && styles.buttonPressed,
+                  (isScanning || !isBluetoothEnabled) && styles.buttonDisabled,
+                ]}
+                onPress={handleScanPrinters}
+                disabled={isScanning || !isBluetoothEnabled}
+              >
+                {isScanning ? (
+                  <ActivityIndicator color={colors.card} />
+                ) : (
                   <IconSymbol name="magnifyingglass" size={20} color={colors.card} />
-                  <Text style={styles.scanButtonText}>Escanear Impresoras</Text>
-                </>
-              )}
-            </Pressable>
+                )}
+                <Text style={styles.buttonText}>
+                  {isScanning ? 'Buscando...' : 'Buscar Impresoras'}
+                </Text>
+              </Pressable>
+            </View>
           </View>
 
           {/* Available Printers */}
           {printers.length > 0 && (
             <View style={styles.section}>
               <Text style={styles.sectionTitle}>Impresoras Disponibles</Text>
-              <View style={styles.card}>
-                {printers.map((printer, index) => (
-                  <Pressable
-                    key={printer.address}
-                    style={({ pressed }) => [
-                      styles.printerItem,
-                      index < printers.length - 1 && styles.printerItemBorder,
-                      pressed && styles.printerItemPressed,
-                    ]}
-                    onPress={() => handleConnectPrinter(printer)}
-                    disabled={isConnecting}
-                  >
-                    <View style={styles.printerLeft}>
-                      <IconSymbol name="printer.fill" size={24} color={colors.primary} />
-                      <View style={styles.printerInfo}>
-                        <Text style={styles.printerName}>{printer.name}</Text>
-                        <Text style={styles.printerAddress}>{printer.address}</Text>
-                      </View>
+              {printers.map((printer) => (
+                <Pressable
+                  key={printer.address}
+                  style={({ pressed }) => [
+                    styles.printerCard,
+                    pressed && styles.printerCardPressed,
+                    connectedPrinter?.address === printer.address && styles.printerCardConnected,
+                  ]}
+                  onPress={() => handleConnectPrinter(printer)}
+                  disabled={isConnecting || connectedPrinter?.address === printer.address}
+                >
+                  <View style={styles.printerInfo}>
+                    <IconSymbol
+                      name="printer.fill"
+                      size={28}
+                      color={
+                        connectedPrinter?.address === printer.address
+                          ? colors.success
+                          : colors.textSecondary
+                      }
+                    />
+                    <View style={styles.printerDetails}>
+                      <Text style={styles.printerName}>{printer.name}</Text>
+                      <Text style={styles.printerAddress}>{printer.address}</Text>
                     </View>
-                    {isConnecting ? (
-                      <ActivityIndicator color={colors.primary} size="small" />
-                    ) : (
-                      <IconSymbol
-                        name="chevron.right"
-                        size={20}
-                        color={colors.textSecondary}
-                      />
-                    )}
-                  </Pressable>
-                ))}
-              </View>
+                  </View>
+                  {connectedPrinter?.address === printer.address ? (
+                    <IconSymbol name="checkmark.circle.fill" size={24} color={colors.success} />
+                  ) : (
+                    <IconSymbol name="chevron.right" size={20} color={colors.textSecondary} />
+                  )}
+                </Pressable>
+              ))}
             </View>
           )}
 
-          {/* Instructions */}
+          {/* Help Section */}
           <View style={styles.section}>
-            <Text style={styles.sectionTitle}>Instrucciones</Text>
+            <Text style={styles.sectionTitle}>Ayuda</Text>
             <View style={styles.card}>
-              <View style={styles.instructionItem}>
-                <View style={styles.instructionNumber}>
-                  <Text style={styles.instructionNumberText}>1</Text>
-                </View>
-                <Text style={styles.instructionText}>
-                  Enciende tu impresora Bluetooth y asegúrate de que esté en modo de emparejamiento.
-                </Text>
-              </View>
-              <View style={styles.instructionItem}>
-                <View style={styles.instructionNumber}>
-                  <Text style={styles.instructionNumberText}>2</Text>
-                </View>
-                <Text style={styles.instructionText}>
-                  Empareja la impresora con tu dispositivo desde la configuración de Bluetooth.
-                </Text>
-              </View>
-              <View style={styles.instructionItem}>
-                <View style={styles.instructionNumber}>
-                  <Text style={styles.instructionNumberText}>3</Text>
-                </View>
-                <Text style={styles.instructionText}>
-                  Presiona &quot;Escanear Impresoras&quot; para buscar dispositivos emparejados.
-                </Text>
-              </View>
-              <View style={styles.instructionItem}>
-                <View style={styles.instructionNumber}>
-                  <Text style={styles.instructionNumberText}>4</Text>
-                </View>
-                <Text style={styles.instructionText}>
-                  Selecciona tu impresora de la lista para conectarte.
-                </Text>
-              </View>
-              <View style={styles.instructionItem}>
-                <View style={styles.instructionNumber}>
-                  <Text style={styles.instructionNumberText}>5</Text>
-                </View>
-                <Text style={styles.instructionText}>
-                  Usa &quot;Imprimir Prueba&quot; para verificar que la conexión funciona correctamente.
-                </Text>
-              </View>
+              <Text style={styles.helpTitle}>Problemas de conexión:</Text>
+              <Text style={styles.helpText}>
+                - Asegúrate de que la impresora esté encendida{'\n'}
+                - Verifica que el Bluetooth esté activado{'\n'}
+                - Empareja la impresora en la configuración de Bluetooth de tu dispositivo{'\n'}
+                - Mantén la impresora cerca del dispositivo{'\n'}
+                - Reinicia la impresora si es necesario
+              </Text>
             </View>
-          </View>
-
-          {/* Note */}
-          <View style={styles.noteContainer}>
-            <IconSymbol name="info.circle.fill" size={20} color={colors.info} />
-            <Text style={styles.noteText}>
-              Los pedidos nuevos se imprimirán automáticamente cuando estés conectado a una impresora.
-            </Text>
           </View>
         </ScrollView>
       </View>
@@ -366,50 +426,43 @@ const styles = StyleSheet.create({
   statusRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'space-between',
-  },
-  statusLeft: {
-    flexDirection: 'row',
-    alignItems: 'center',
     gap: 12,
-    flex: 1,
+    marginBottom: 16,
   },
-  statusInfo: {
-    flex: 1,
-  },
-  statusLabel: {
+  statusText: {
     fontSize: 16,
     fontWeight: '600',
     color: colors.text,
-    marginBottom: 2,
   },
-  statusValue: {
-    fontSize: 14,
-    color: colors.textSecondary,
-  },
-  statusDescription: {
-    fontSize: 14,
-    color: colors.textSecondary,
-  },
-  buttonRow: {
+  printerInfo: {
     flexDirection: 'row',
+    alignItems: 'center',
     gap: 12,
-    marginTop: 16,
+    marginBottom: 16,
+  },
+  printerDetails: {
+    flex: 1,
+  },
+  printerName: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: colors.text,
+    marginBottom: 4,
+  },
+  printerAddress: {
+    fontSize: 13,
+    color: colors.textSecondary,
+  },
+  buttonGroup: {
+    gap: 12,
   },
   button: {
-    flex: 1,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    padding: 12,
-    borderRadius: 8,
+    padding: 14,
+    borderRadius: 10,
     gap: 8,
-  },
-  testButton: {
-    backgroundColor: colors.primary,
-  },
-  disconnectButton: {
-    backgroundColor: colors.danger,
   },
   buttonPressed: {
     opacity: 0.7,
@@ -418,95 +471,43 @@ const styles = StyleSheet.create({
     opacity: 0.5,
   },
   buttonText: {
+    fontSize: 15,
+    fontWeight: '600',
+    color: colors.card,
+  },
+  infoText: {
     fontSize: 14,
-    fontWeight: '600',
-    color: colors.card,
+    color: colors.textSecondary,
+    lineHeight: 20,
+    marginBottom: 16,
   },
-  scanButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: colors.primary,
-    padding: 16,
+  printerCard: {
+    backgroundColor: colors.card,
     borderRadius: 12,
-    gap: 8,
-  },
-  scanButtonText: {
-    fontSize: 16,
-    fontWeight: '600',
-    color: colors.card,
-  },
-  printerItem: {
+    padding: 16,
+    marginBottom: 12,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    paddingVertical: 12,
+    boxShadow: '0px 2px 8px rgba(0, 0, 0, 0.08)',
+    elevation: 2,
   },
-  printerItemBorder: {
-    borderBottomWidth: 1,
-    borderBottomColor: colors.highlight,
-  },
-  printerItemPressed: {
+  printerCardPressed: {
     opacity: 0.7,
   },
-  printerLeft: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 12,
-    flex: 1,
+  printerCardConnected: {
+    borderWidth: 2,
+    borderColor: colors.success,
   },
-  printerInfo: {
-    flex: 1,
-  },
-  printerName: {
-    fontSize: 16,
+  helpTitle: {
+    fontSize: 15,
     fontWeight: '600',
     color: colors.text,
-    marginBottom: 2,
+    marginBottom: 8,
   },
-  printerAddress: {
-    fontSize: 13,
+  helpText: {
+    fontSize: 14,
     color: colors.textSecondary,
-  },
-  instructionItem: {
-    flexDirection: 'row',
-    alignItems: 'flex-start',
-    gap: 12,
-    marginBottom: 16,
-  },
-  instructionNumber: {
-    width: 28,
-    height: 28,
-    borderRadius: 14,
-    backgroundColor: colors.primary,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  instructionNumberText: {
-    fontSize: 14,
-    fontWeight: '700',
-    color: colors.card,
-  },
-  instructionText: {
-    flex: 1,
-    fontSize: 14,
-    color: colors.text,
-    lineHeight: 20,
-  },
-  noteContainer: {
-    flexDirection: 'row',
-    alignItems: 'flex-start',
-    gap: 12,
-    backgroundColor: colors.card,
-    padding: 16,
-    borderRadius: 12,
-    borderLeftWidth: 4,
-    borderLeftColor: colors.info,
-  },
-  noteText: {
-    flex: 1,
-    fontSize: 14,
-    color: colors.text,
-    lineHeight: 20,
+    lineHeight: 22,
   },
 });
