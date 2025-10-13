@@ -2,10 +2,13 @@
 import React from "react";
 import { View, Text, StyleSheet, ScrollView, Platform, Pressable } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
+import { useRouter } from "expo-router";
 import { IconSymbol } from "@/components/IconSymbol";
 import { colors } from "@/styles/commonStyles";
 
 export default function ProfileScreen() {
+  const router = useRouter();
+
   return (
     <SafeAreaView style={styles.safeArea} edges={['top']}>
       <ScrollView
@@ -63,7 +66,10 @@ export default function ProfileScreen() {
               <IconSymbol name="chevron.right" size={20} color={colors.textSecondary} />
             </Pressable>
 
-            <Pressable style={styles.menuItem} onPress={() => console.log('Impresora')}>
+            <Pressable 
+              style={styles.menuItem} 
+              onPress={() => router.push('/printer-settings')}
+            >
               <View style={styles.menuItemLeft}>
                 <IconSymbol name="printer.fill" size={24} color={colors.primary} />
                 <Text style={styles.menuItemText}>Configurar Impresora</Text>

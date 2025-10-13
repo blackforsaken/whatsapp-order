@@ -1,11 +1,12 @@
 
 import React, { useState } from "react";
-import { View, Text, StyleSheet, ScrollView, Pressable, Platform } from "react-native";
+import { View, Text, StyleSheet, ScrollView, Pressable, Platform, Alert, Linking } from "react-native";
 import { Stack, useLocalSearchParams, useRouter } from "expo-router";
 import { IconSymbol } from "@/components/IconSymbol";
 import { colors } from "@/styles/commonStyles";
 import { mockOrders } from "@/data/mockOrders";
 import { Order, OrderStatus } from "@/types/Order";
+import { printerService } from "@/services/BluetoothPrinterService";
 
 const getStatusColor = (status: OrderStatus): string => {
   switch (status) {
@@ -47,6 +48,7 @@ export default function OrderDetailScreen() {
   const [order, setOrder] = useState<Order | undefined>(
     mockOrders.find((o) => o.id === id)
   );
+  const [isPrinting, setIsPrinting] = useState(false);
 
   if (!order) {
     return (
@@ -73,14 +75,70 @@ export default function OrderDetailScreen() {
     setOrder({ ...order, status: newStatus, updatedAt: new Date() });
   };
 
-  const handlePrint = () => {
+  const handlePrint = async () => {
     console.log('Printing order:', order.id);
-    // TODO: Implement Bluetooth printer integration
+    
+    if (!printerService.isConnected()) {
+      Alert.alert(
+        'Impresora no conectada',
+        '¿Deseas configurar una impresora ahora?',
+        [
+          {
+            text: 'Cancelar',
+            style: 'cancel',
+          },
+          {
+            text: 'Configurar',
+            onPress: () => router.push('/printer-settings'),
+          },
+        ]
+      );
+      return;
+    }
+
+    setIsPrinting(true);
+    
+    try {
+      const printed = await printerService.printOrder(order);
+      
+      if (printed) {
+        Alert.alert('Éxito', 'Pedido impreso correctamente.');
+      } else {
+        Alert.alert('Error', 'No se pudo imprimir el pedido. Verifica la conexión con la impresora.');
+      }
+    } catch (error) {
+      console.error('Error printing order:', error);
+      Alert.alert('Error', 'Ocurrió un error al imprimir el pedido.');
+    } finally {
+      setIsPrinting(false);
+    }
   };
 
-  const handleWhatsApp = () => {
+  const handleWhatsApp = async () => {
     console.log('Opening WhatsApp for:', order.customerPhone);
-    // TODO: Implement WhatsApp integration
+    
+    try {
+      // Remove any non-numeric characters from phone number
+      const phoneNumber = order.customerPhone.replace(/\D/g, '');
+      
+      // Create WhatsApp message
+      const message = `Hola ${order.customerName}, tu pedido ${order.orderNumber} está ${getStatusText(order.status).toLowerCase()}.`;
+      
+      // WhatsApp URL
+      const whatsappUrl = `whatsapp://send?phone=${phoneNumber}&text=${encodeURIComponent(message)}`;
+      
+      // Check if WhatsApp is installed
+      const canOpen = await Linking.canOpenURL(whatsappUrl);
+      
+      if (canOpen) {
+        await Linking.openURL(whatsappUrl);
+      } else {
+        Alert.alert('Error', 'WhatsApp no está instalado en este dispositivo.');
+      }
+    } catch (error) {
+      console.error('Error opening WhatsApp:', error);
+      Alert.alert('Error', 'No se pudo abrir WhatsApp.');
+    }
   };
 
   return (
@@ -190,11 +248,15 @@ export default function OrderDetailScreen() {
                   styles.actionButton,
                   { backgroundColor: colors.primary },
                   pressed && styles.actionButtonPressed,
+                  isPrinting && styles.actionButtonDisabled,
                 ]}
                 onPress={handlePrint}
+                disabled={isPrinting}
               >
                 <IconSymbol name="printer.fill" size={24} color={colors.card} />
-                <Text style={styles.actionButtonText}>Imprimir</Text>
+                <Text style={styles.actionButtonText}>
+                  {isPrinting ? 'Imprimiendo...' : 'Imprimir'}
+                </Text>
               </Pressable>
 
               <Pressable
@@ -415,6 +477,9 @@ const styles = StyleSheet.create({
   },
   actionButtonPressed: {
     opacity: 0.7,
+  },
+  actionButtonDisabled: {
+    opacity: 0.5,
   },
   actionButtonText: {
     fontSize: 14,

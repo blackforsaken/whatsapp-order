@@ -6,6 +6,8 @@ import { IconSymbol } from "@/components/IconSymbol";
 import { colors } from "@/styles/commonStyles";
 import { mockOrders } from "@/data/mockOrders";
 import { Order, OrderStatus } from "@/types/Order";
+import { useAutoPrint } from "@/hooks/useAutoPrint";
+import { usePrinter } from "@/contexts/PrinterContext";
 
 const getStatusColor = (status: OrderStatus): string => {
   switch (status) {
@@ -58,14 +60,30 @@ const formatTime = (date: Date): string => {
 export default function HomeScreen() {
   const router = useRouter();
   const [orders] = useState<Order[]>(mockOrders);
+  const { isConnected } = usePrinter();
+  
+  // Enable auto-printing for new orders
+  useAutoPrint(orders);
 
   const renderHeaderRight = () => (
-    <Pressable
-      onPress={() => console.log('Add new order')}
-      style={styles.headerButtonContainer}
-    >
-      <IconSymbol name="plus" color={colors.primary} size={24} />
-    </Pressable>
+    <View style={styles.headerRightContainer}>
+      <Pressable
+        onPress={() => router.push('/printer-settings')}
+        style={styles.headerButtonContainer}
+      >
+        <IconSymbol 
+          name="printer.fill" 
+          color={isConnected ? colors.success : colors.textSecondary} 
+          size={22} 
+        />
+      </Pressable>
+      <Pressable
+        onPress={() => console.log('Add new order')}
+        style={styles.headerButtonContainer}
+      >
+        <IconSymbol name="plus" color={colors.primary} size={24} />
+      </Pressable>
+    </View>
   );
 
   const renderHeaderLeft = () => (
@@ -270,5 +288,10 @@ const styles = StyleSheet.create({
   },
   headerButtonContainer: {
     padding: 6,
+  },
+  headerRightContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
   },
 });
