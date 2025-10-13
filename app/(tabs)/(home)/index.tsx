@@ -1,104 +1,156 @@
-import React from "react";
-import { Stack, Link } from "expo-router";
-import { FlatList, Pressable, StyleSheet, View, Text, Alert, Platform } from "react-native";
-import { IconSymbol } from "@/components/IconSymbol";
-import { GlassView } from "expo-glass-effect";
-import { useTheme } from "@react-navigation/native";
 
-const ICON_COLOR = "#007AFF";
+import React, { useState } from "react";
+import { Stack, useRouter } from "expo-router";
+import { ScrollView, Pressable, StyleSheet, View, Text, Platform } from "react-native";
+import { IconSymbol } from "@/components/IconSymbol";
+import { colors } from "@/styles/commonStyles";
+import { mockOrders } from "@/data/mockOrders";
+import { Order, OrderStatus } from "@/types/Order";
+
+const getStatusColor = (status: OrderStatus): string => {
+  switch (status) {
+    case 'pending':
+      return colors.warning;
+    case 'preparing':
+      return colors.info;
+    case 'ready':
+      return colors.success;
+    case 'delivered':
+      return colors.secondary;
+    case 'cancelled':
+      return colors.danger;
+    default:
+      return colors.secondary;
+  }
+};
+
+const getStatusText = (status: OrderStatus): string => {
+  switch (status) {
+    case 'pending':
+      return 'Pendiente';
+    case 'preparing':
+      return 'Preparando';
+    case 'ready':
+      return 'Listo';
+    case 'delivered':
+      return 'Entregado';
+    case 'cancelled':
+      return 'Cancelado';
+    default:
+      return status;
+  }
+};
+
+const formatTime = (date: Date): string => {
+  const now = new Date();
+  const diffMs = now.getTime() - date.getTime();
+  const diffMins = Math.floor(diffMs / 60000);
+  
+  if (diffMins < 1) return 'Ahora mismo';
+  if (diffMins < 60) return `Hace ${diffMins} min`;
+  
+  const diffHours = Math.floor(diffMins / 60);
+  if (diffHours < 24) return `Hace ${diffHours}h`;
+  
+  return date.toLocaleDateString('es-ES', { day: '2-digit', month: '2-digit' });
+};
 
 export default function HomeScreen() {
-  const theme = useTheme();
-  const modalDemos = [
-    {
-      title: "Standard Modal",
-      description: "Full screen modal presentation",
-      route: "/modal",
-      color: "#007AFF",
-    },
-    {
-      title: "Form Sheet",
-      description: "Bottom sheet with detents and grabber",
-      route: "/formsheet",
-      color: "#34C759",
-    },
-    {
-      title: "Transparent Modal",
-      description: "Overlay without obscuring background",
-      route: "/transparent-modal",
-      color: "#FF9500",
-    }
-  ];
-
-  const renderModalDemo = ({ item }: { item: (typeof modalDemos)[0] }) => (
-    <GlassView style={[
-      styles.demoCard,
-      Platform.OS !== 'ios' && { backgroundColor: theme.dark ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.05)' }
-    ]} glassEffectStyle="regular">
-      <View style={[styles.demoIcon, { backgroundColor: item.color }]}>
-        <IconSymbol name="square.grid.3x3" color="white" size={24} />
-      </View>
-      <View style={styles.demoContent}>
-        <Text style={[styles.demoTitle, { color: theme.colors.text }]}>{item.title}</Text>
-        <Text style={[styles.demoDescription, { color: theme.dark ? '#98989D' : '#666' }]}>{item.description}</Text>
-      </View>
-      <Link href={item.route as any} asChild>
-        <Pressable>
-          <GlassView style={[
-            styles.tryButton,
-            Platform.OS !== 'ios' && { backgroundColor: theme.dark ? 'rgba(255,255,255,0.15)' : 'rgba(0,0,0,0.08)' }
-          ]} glassEffectStyle="clear">
-            <Text style={[styles.tryButtonText, { color: theme.colors.primary }]}>Try It</Text>
-          </GlassView>
-        </Pressable>
-      </Link>
-    </GlassView>
-  );
+  const router = useRouter();
+  const [orders] = useState<Order[]>(mockOrders);
 
   const renderHeaderRight = () => (
     <Pressable
-      onPress={() => Alert.alert("Not Implemented", "This feature is not implemented yet")}
+      onPress={() => console.log('Add new order')}
       style={styles.headerButtonContainer}
     >
-      <IconSymbol name="plus" color={theme.colors.primary} />
+      <IconSymbol name="plus" color={colors.primary} size={24} />
     </Pressable>
   );
 
   const renderHeaderLeft = () => (
     <Pressable
-      onPress={() => Alert.alert("Not Implemented", "This feature is not implemented yet")}
+      onPress={() => console.log('Open settings')}
       style={styles.headerButtonContainer}
     >
-      <IconSymbol
-        name="gear"
-        color={theme.colors.primary}
-      />
+      <IconSymbol name="line.3.horizontal.decrease.circle" color={colors.primary} size={24} />
     </Pressable>
   );
+
+  const handleOrderPress = (orderId: string) => {
+    console.log('Order pressed:', orderId);
+    router.push(`/order/${orderId}`);
+  };
 
   return (
     <>
       {Platform.OS === 'ios' && (
         <Stack.Screen
           options={{
-            title: "Building the app...",
+            title: "Pedidos",
             headerRight: renderHeaderRight,
             headerLeft: renderHeaderLeft,
           }}
         />
       )}
-      <View style={[styles.container, { backgroundColor: theme.colors.background }]}>
-        <FlatList
-          data={modalDemos}
-          renderItem={renderModalDemo}
-          keyExtractor={(item) => item.route}
+      <View style={styles.container}>
+        <ScrollView
+          style={styles.scrollView}
           contentContainerStyle={[
             styles.listContainer,
             Platform.OS !== 'ios' && styles.listContainerWithTabBar
           ]}
-          contentInsetAdjustmentBehavior="automatic"
           showsVerticalScrollIndicator={false}
-        />
+        >
+          {orders.map((order) => (
+            <Pressable
+              key={order.id}
+              style={({ pressed }) => [
+                styles.orderCard,
+                pressed && styles.orderCardPressed,
+              ]}
+              onPress={() => handleOrderPress(order.id)}
+            >
+              <View style={styles.orderHeader}>
+                <View style={styles.orderHeaderLeft}>
+                  <Text style={styles.orderNumber}>{order.orderNumber}</Text>
+                  <Text style={styles.orderTime}>{formatTime(order.createdAt)}</Text>
+                </View>
+                <View style={[styles.statusBadge, { backgroundColor: getStatusColor(order.status) }]}>
+                  <Text style={styles.statusText}>{getStatusText(order.status)}</Text>
+                </View>
+              </View>
+
+              <View style={styles.customerInfo}>
+                <View style={styles.customerRow}>
+                  <IconSymbol name="person.fill" size={16} color={colors.textSecondary} />
+                  <Text style={styles.customerName}>{order.customerName}</Text>
+                </View>
+                <View style={styles.customerRow}>
+                  <IconSymbol name="phone.fill" size={16} color={colors.textSecondary} />
+                  <Text style={styles.customerPhone}>{order.customerPhone}</Text>
+                </View>
+              </View>
+
+              <View style={styles.orderFooter}>
+                <View style={styles.itemsCount}>
+                  <IconSymbol name="cart.fill" size={16} color={colors.textSecondary} />
+                  <Text style={styles.itemsCountText}>
+                    {order.items.length} {order.items.length === 1 ? 'artículo' : 'artículos'}
+                  </Text>
+                </View>
+                <Text style={styles.totalAmount}>€{order.totalAmount.toFixed(2)}</Text>
+              </View>
+
+              {order.notes && (
+                <View style={styles.notesContainer}>
+                  <IconSymbol name="note.text" size={14} color={colors.textSecondary} />
+                  <Text style={styles.notesText} numberOfLines={1}>{order.notes}</Text>
+                </View>
+              )}
+            </Pressable>
+          ))}
+        </ScrollView>
       </View>
     </>
   );
@@ -107,55 +159,116 @@ export default function HomeScreen() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    // backgroundColor handled dynamically
+    backgroundColor: colors.background,
+  },
+  scrollView: {
+    flex: 1,
   },
   listContainer: {
     paddingVertical: 16,
     paddingHorizontal: 16,
   },
   listContainerWithTabBar: {
-    paddingBottom: 100, // Extra padding for floating tab bar
+    paddingBottom: 100,
   },
-  demoCard: {
+  orderCard: {
+    backgroundColor: colors.card,
     borderRadius: 12,
     padding: 16,
     marginBottom: 12,
+    boxShadow: '0px 2px 8px rgba(0, 0, 0, 0.08)',
+    elevation: 2,
+  },
+  orderCardPressed: {
+    opacity: 0.7,
+    transform: [{ scale: 0.98 }],
+  },
+  orderHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 12,
+  },
+  orderHeaderLeft: {
     flexDirection: 'row',
     alignItems: 'center',
+    gap: 12,
   },
-  demoIcon: {
-    width: 48,
-    height: 48,
-    borderRadius: 24,
-    justifyContent: 'center',
-    alignItems: 'center',
-    marginRight: 16,
-  },
-  demoContent: {
-    flex: 1,
-  },
-  demoTitle: {
+  orderNumber: {
     fontSize: 18,
-    fontWeight: '600',
-    marginBottom: 4,
-    // color handled dynamically
+    fontWeight: '700',
+    color: colors.text,
   },
-  demoDescription: {
+  orderTime: {
     fontSize: 14,
-    lineHeight: 18,
-    // color handled dynamically
+    color: colors.textSecondary,
+  },
+  statusBadge: {
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 16,
+  },
+  statusText: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: colors.card,
+  },
+  customerInfo: {
+    gap: 8,
+    marginBottom: 12,
+    paddingBottom: 12,
+    borderBottomWidth: 1,
+    borderBottomColor: colors.highlight,
+  },
+  customerRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  customerName: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: colors.text,
+  },
+  customerPhone: {
+    fontSize: 14,
+    color: colors.textSecondary,
+  },
+  orderFooter: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+  },
+  itemsCount: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+  },
+  itemsCountText: {
+    fontSize: 14,
+    color: colors.textSecondary,
+  },
+  totalAmount: {
+    fontSize: 20,
+    fontWeight: '700',
+    color: colors.primary,
+  },
+  notesContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    marginTop: 8,
+    paddingTop: 8,
+    borderTopWidth: 1,
+    borderTopColor: colors.highlight,
+  },
+  notesText: {
+    fontSize: 13,
+    color: colors.textSecondary,
+    fontStyle: 'italic',
+    flex: 1,
   },
   headerButtonContainer: {
     padding: 6,
-  },
-  tryButton: {
-    paddingHorizontal: 16,
-    paddingVertical: 8,
-    borderRadius: 6,
-  },
-  tryButtonText: {
-    fontSize: 14,
-    fontWeight: '600',
-    // color handled dynamically
   },
 });
