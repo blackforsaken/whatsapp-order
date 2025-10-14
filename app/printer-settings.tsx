@@ -1,5 +1,5 @@
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import {
   View,
   Text,
@@ -20,40 +20,12 @@ export default function PrinterSettingsScreen() {
   const [isScanning, setIsScanning] = useState(false);
   const [isConnecting, setIsConnecting] = useState(false);
   const [isTesting, setIsTesting] = useState(false);
+  const [isInitializing, setIsInitializing] = useState(false);
   const [printers, setPrinters] = useState<PrinterDevice[]>([]);
   const [connectedPrinter, setConnectedPrinter] = useState<PrinterDevice | null>(null);
   const [isBluetoothEnabled, setIsBluetoothEnabled] = useState(false);
 
-  useEffect(() => {
-    initializeBluetooth();
-  }, []);
-
-  const initializeBluetooth = async () => {
-    console.log('Initializing Bluetooth in settings...');
-    try {
-      const initialized = await printerService.initialize();
-      setIsBluetoothEnabled(initialized);
-      
-      if (initialized) {
-        checkConnection();
-      } else {
-        Alert.alert(
-          'Bluetooth desactivado',
-          'Por favor, activa el Bluetooth para usar la impresora.',
-          [
-            {
-              text: 'OK',
-            },
-          ]
-        );
-      }
-    } catch (error) {
-      console.error('Error initializing Bluetooth:', error);
-      Alert.alert('Error', 'No se pudo inicializar el Bluetooth.');
-    }
-  };
-
-  const checkConnection = async () => {
+  const checkConnection = useCallback(async () => {
     console.log('Checking printer connection...');
     const device = printerService.getConnectedDevice();
     
@@ -72,7 +44,46 @@ export default function PrinterSettingsScreen() {
       setConnectedPrinter(null);
       console.log('No printer connected');
     }
-  };
+  }, []);
+
+  const initializeBluetooth = useCallback(async () => {
+    console.log('Initializing Bluetooth in settings...');
+    setIsInitializing(true);
+    
+    try {
+      const initialized = await printerService.initialize();
+      console.log('Bluetooth initialization result:', initialized);
+      setIsBluetoothEnabled(initialized);
+      
+      if (initialized) {
+        await checkConnection();
+      } else {
+        Alert.alert(
+          'Bluetooth desactivado',
+          Platform.OS === 'android' 
+            ? 'No se pudo activar el Bluetooth. Por favor, actívalo manualmente en la configuración de tu dispositivo.'
+            : 'Por favor, activa el Bluetooth en la configuración de tu dispositivo para usar la impresora.',
+          [
+            {
+              text: 'OK',
+            },
+          ]
+        );
+      }
+    } catch (error) {
+      console.error('Error initializing Bluetooth:', error);
+      Alert.alert(
+        'Error',
+        'No se pudo inicializar el Bluetooth. Asegúrate de que tu dispositivo tenga Bluetooth y que la app tenga los permisos necesarios.'
+      );
+    } finally {
+      setIsInitializing(false);
+    }
+  }, [checkConnection]);
+
+  useEffect(() => {
+    initializeBluetooth();
+  }, [initializeBluetooth]);
 
   const handleScanPrinters = async () => {
     console.log('Scanning for printers...');
@@ -86,7 +97,10 @@ export default function PrinterSettingsScreen() {
       if (foundPrinters.length === 0) {
         Alert.alert(
           'No se encontraron impresoras',
-          'Asegúrate de que tu impresora Bluetooth esté encendida y emparejada con este dispositivo.',
+          'Asegúrate de que:\n\n' +
+          '- Tu impresora Bluetooth esté encendida\n' +
+          '- La impresora esté emparejada con este dispositivo en la configuración de Bluetooth\n' +
+          '- La impresora esté dentro del alcance',
           [
             {
               text: 'OK',
@@ -98,7 +112,10 @@ export default function PrinterSettingsScreen() {
       }
     } catch (error) {
       console.error('Error scanning for printers:', error);
-      Alert.alert('Error', 'No se pudo escanear las impresoras.');
+      Alert.alert(
+        'Error',
+        'No se pudo escanear las impresoras. Verifica que el Bluetooth esté activado y que la app tenga los permisos necesarios.'
+      );
     } finally {
       setIsScanning(false);
     }
@@ -117,7 +134,10 @@ export default function PrinterSettingsScreen() {
       } else {
         Alert.alert(
           'Error de conexión',
-          'No se pudo conectar a la impresora. Asegúrate de que esté encendida y dentro del alcance.',
+          'No se pudo conectar a la impresora. Asegúrate de que:\n\n' +
+          '- La impresora esté encendida\n' +
+          '- La impresora esté dentro del alcance\n' +
+          '- No esté conectada a otro dispositivo',
           [
             {
               text: 'Reintentar',
@@ -198,7 +218,10 @@ export default function PrinterSettingsScreen() {
       } else {
         Alert.alert(
           'Error de impresión',
-          'No se pudo imprimir la prueba. Verifica que la impresora esté encendida y tenga papel.',
+          'No se pudo imprimir la prueba. Verifica que:\n\n' +
+          '- La impresora esté encendida\n' +
+          '- La impresora tenga papel\n' +
+          '- La conexión Bluetooth esté activa',
           [
             {
               text: 'Reintentar',
@@ -253,10 +276,19 @@ export default function PrinterSettingsScreen() {
                     styles.button,
                     { backgroundColor: colors.primary },
                     pressed && styles.buttonPressed,
+                    isInitializing && styles.buttonDisabled,
                   ]}
                   onPress={initializeBluetooth}
+                  disabled={isInitializing}
                 >
-                  <Text style={styles.buttonText}>Activar Bluetooth</Text>
+                  {isInitializing ? (
+                    <ActivityIndicator color={colors.card} />
+                  ) : (
+                    <IconSymbol name="bolt.fill" size={20} color={colors.card} />
+                  )}
+                  <Text style={styles.buttonText}>
+                    {isInitializing ? 'Activando...' : 'Activar Bluetooth'}
+                  </Text>
                 </Pressable>
               )}
             </View>
@@ -285,7 +317,11 @@ export default function PrinterSettingsScreen() {
                     onPress={handlePrintTest}
                     disabled={isTesting}
                   >
-                    <IconSymbol name="doc.text.fill" size={20} color={colors.card} />
+                    {isTesting ? (
+                      <ActivityIndicator color={colors.card} />
+                    ) : (
+                      <IconSymbol name="doc.text.fill" size={20} color={colors.card} />
+                    )}
                     <Text style={styles.buttonText}>
                       {isTesting ? 'Imprimiendo...' : 'Imprimir Prueba'}
                     </Text>
@@ -311,7 +347,7 @@ export default function PrinterSettingsScreen() {
             <Text style={styles.sectionTitle}>Buscar Impresoras</Text>
             <View style={styles.card}>
               <Text style={styles.infoText}>
-                Asegúrate de que tu impresora Bluetooth esté encendida y emparejada con este dispositivo.
+                Asegúrate de que tu impresora Bluetooth esté encendida y emparejada con este dispositivo en la configuración de Bluetooth.
               </Text>
               <Pressable
                 style={({ pressed }) => [
@@ -385,7 +421,8 @@ export default function PrinterSettingsScreen() {
                 - Verifica que el Bluetooth esté activado{'\n'}
                 - Empareja la impresora en la configuración de Bluetooth de tu dispositivo{'\n'}
                 - Mantén la impresora cerca del dispositivo{'\n'}
-                - Reinicia la impresora si es necesario
+                - Reinicia la impresora si es necesario{'\n'}
+                - Verifica que la app tenga permisos de Bluetooth
               </Text>
             </View>
           </View>
