@@ -1,10 +1,10 @@
 
+import { Platform } from 'react-native';
 import {
   BluetoothManager,
   BluetoothEscposPrinter,
 } from 'react-native-thermal-receipt-printer-image-qr';
 import { Order, OrderItem } from '@/types/Order';
-import { Platform } from 'react-native';
 
 export interface PrinterDevice {
   address: string;
