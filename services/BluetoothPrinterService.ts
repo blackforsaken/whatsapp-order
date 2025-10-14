@@ -1,10 +1,23 @@
 
 import { Platform } from 'react-native';
-import {
-  BluetoothManager,
-  BluetoothEscposPrinter,
-} from 'react-native-thermal-receipt-printer-image-qr';
 import { Order, OrderItem } from '@/types/Order';
+
+// Conditionally import the Bluetooth library only on native platforms
+let BluetoothManager: any = null;
+let BluetoothEscposPrinter: any = null;
+
+// Only import on native platforms
+if (Platform.OS !== 'web') {
+  try {
+    const BluetoothLib = require('react-native-thermal-receipt-printer-image-qr');
+    BluetoothManager = BluetoothLib.BluetoothManager;
+    BluetoothEscposPrinter = BluetoothLib.BluetoothEscposPrinter;
+    console.log('Bluetooth library loaded successfully');
+  } catch (error) {
+    console.error('Failed to load Bluetooth library:', error);
+    console.log('Bluetooth printing will not be available');
+  }
+}
 
 export interface PrinterDevice {
   address: string;
@@ -16,21 +29,39 @@ class BluetoothPrinterService {
   private isInitialized: boolean = false;
 
   /**
+   * Check if Bluetooth is available on this platform
+   */
+  isBluetoothAvailable(): boolean {
+    if (Platform.OS === 'web') {
+      console.log('Bluetooth is not available on web platform');
+      return false;
+    }
+
+    if (!BluetoothManager || !BluetoothEscposPrinter) {
+      console.log('Bluetooth library is not loaded');
+      return false;
+    }
+
+    return true;
+  }
+
+  /**
    * Initialize Bluetooth and check if it's enabled
    */
   async initialize(): Promise<boolean> {
     try {
       console.log('Initializing Bluetooth...');
       
-      // Check if BluetoothManager is available
-      if (!BluetoothManager) {
-        console.error('BluetoothManager is not available');
+      // Check if Bluetooth is available on this platform
+      if (!this.isBluetoothAvailable()) {
+        console.error('Bluetooth is not available on this platform');
         return false;
       }
 
       // Check if the isBluetoothEnabled method exists
       if (typeof BluetoothManager.isBluetoothEnabled !== 'function') {
         console.error('BluetoothManager.isBluetoothEnabled is not a function');
+        console.log('Available BluetoothManager methods:', Object.keys(BluetoothManager || {}));
         return false;
       }
 
@@ -71,6 +102,12 @@ class BluetoothPrinterService {
     try {
       console.log('Scanning for Bluetooth printers...');
       
+      // Check if Bluetooth is available
+      if (!this.isBluetoothAvailable()) {
+        console.error('Bluetooth is not available on this platform');
+        return [];
+      }
+
       // Ensure Bluetooth is initialized
       if (!this.isInitialized) {
         console.log('Bluetooth not initialized, initializing now...');
@@ -79,12 +116,6 @@ class BluetoothPrinterService {
           console.error('Failed to initialize Bluetooth');
           return [];
         }
-      }
-      
-      // Check if BluetoothManager is available
-      if (!BluetoothManager) {
-        console.error('BluetoothManager is not available');
-        return [];
       }
 
       // Get paired devices
@@ -113,6 +144,12 @@ class BluetoothPrinterService {
     try {
       console.log('Connecting to printer:', device.name);
       
+      // Check if Bluetooth is available
+      if (!this.isBluetoothAvailable()) {
+        console.error('Bluetooth is not available on this platform');
+        return false;
+      }
+
       // Ensure Bluetooth is initialized
       if (!this.isInitialized) {
         console.log('Bluetooth not initialized, initializing now...');
@@ -121,12 +158,6 @@ class BluetoothPrinterService {
           console.error('Failed to initialize Bluetooth');
           return false;
         }
-      }
-      
-      // Check if BluetoothManager is available
-      if (!BluetoothManager) {
-        console.error('BluetoothManager is not available');
-        return false;
       }
 
       await BluetoothManager.connect(device.address);
@@ -150,9 +181,9 @@ class BluetoothPrinterService {
       if (this.connectedDevice) {
         console.log('Disconnecting from printer...');
         
-        // Check if BluetoothManager is available
-        if (!BluetoothManager) {
-          console.error('BluetoothManager is not available');
+        // Check if Bluetooth is available
+        if (!this.isBluetoothAvailable()) {
+          console.error('Bluetooth is not available on this platform');
           this.connectedDevice = null;
           return;
         }
@@ -191,9 +222,9 @@ class BluetoothPrinterService {
         return false;
       }
 
-      // Check if BluetoothManager is available
-      if (!BluetoothManager) {
-        console.error('BluetoothManager is not available');
+      // Check if Bluetooth is available
+      if (!this.isBluetoothAvailable()) {
+        console.error('Bluetooth is not available on this platform');
         this.connectedDevice = null;
         return false;
       }
@@ -225,16 +256,16 @@ class BluetoothPrinterService {
         return false;
       }
 
+      // Check if Bluetooth is available
+      if (!this.isBluetoothAvailable()) {
+        console.error('Bluetooth is not available on this platform');
+        return false;
+      }
+
       // Verify connection before printing
       const isConnected = await this.verifyConnection();
       if (!isConnected) {
         console.error('Printer connection lost');
-        return false;
-      }
-
-      // Check if BluetoothEscposPrinter is available
-      if (!BluetoothEscposPrinter) {
-        console.error('BluetoothEscposPrinter is not available');
         return false;
       }
 
@@ -452,16 +483,16 @@ class BluetoothPrinterService {
         return false;
       }
 
+      // Check if Bluetooth is available
+      if (!this.isBluetoothAvailable()) {
+        console.error('Bluetooth is not available on this platform');
+        return false;
+      }
+
       // Verify connection before printing
       const isConnected = await this.verifyConnection();
       if (!isConnected) {
         console.error('Printer connection lost');
-        return false;
-      }
-
-      // Check if BluetoothEscposPrinter is available
-      if (!BluetoothEscposPrinter) {
-        console.error('BluetoothEscposPrinter is not available');
         return false;
       }
 
